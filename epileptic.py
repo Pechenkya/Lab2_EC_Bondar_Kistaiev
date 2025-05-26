@@ -49,6 +49,18 @@ class EllipticCurve:
 
 
 
+class P224(EllipticCurve):
+    def __init__(self):
+        super().__init__(0xfffffffffffffffffffffffffffffffefffffffffffffffffffffffe,
+                         0xb4050a850c04b3abf54132565044b0b7d7bfd8ba270b39432355ffb4, 
+                         0xffffffffffffffffffffffffffffffff000000000000000000000001)
+        
+        self.n = 0xffffffffffffffffffffffffffff16a2e0b8f03e13dd29455c5c2a3d
+        self.G = EllipticCurvePoint.from_affine(0xb70e0cbd6bb4bf7f321390b94a03c1d356c21122343280d6115c1d21,
+                                                0xbd376388b5f723fb4c22dfe6cd4375a05a07476444d5819985007e34, super())
+
+
+
 
 class EllipticCurvePoint:
     def __init__(self, x, y, separ_letter, curve):
@@ -65,6 +77,21 @@ class EllipticCurvePoint:
 
         if not curve.is_on_curve(self):
             raise ValueError(f"The point {self} is not on the given elliptic curve.")
+
+    @staticmethod
+    def from_bytes(bytes, curve):
+        if len(bytes) != 56:
+            raise ValueError("Bytes representation must be 56 bytes long")
+        
+        x = int.from_bytes(bytes[:28], 'big')
+        y = int.from_bytes(bytes[28:], 'big')
+
+        return EllipticCurvePoint.from_affine(x, y, curve)
+
+    def to_bytes(self):
+        x, y = self.to_affine()
+        return x.to_bytes(28, 'big') + y.to_bytes(28, 'big')
+
 
     @staticmethod
     def from_affine(x, y, curve):

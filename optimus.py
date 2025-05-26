@@ -106,6 +106,19 @@ def rand_int(bit_length: int, gen_type = SRNG_Type.SHA256_DRBG):
         return res 
         
 
+def rand_less_than(max_val: int, gen_type = SRNG_Type.SHA256_DRBG):
+    if gen_type == SRNG_Type.BBS:
+        gen = BBS()
+    elif gen_type == SRNG_Type.SHA256_DRBG:
+        gen = SHA256_DRBG(random.randint(1024, 3456787654))
+
+    blen = max_val.bit_length()
+    res = rand_int(blen, gen_type)
+    while res > max_val:
+        res = rand_int(blen, gen_type)
+    
+    return res
+
 
 
 def bytes_to_num(byte_seq):
