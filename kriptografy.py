@@ -57,7 +57,7 @@ class UserSecretSharer(BaseUser):
 
 
     def send_DH_init(self, name):
-        other_pk = self.pki.get_public_key(name)
+        other_pk = self.pki.get_public_key(name, "DH")
         shared_secret = SHA256.new((self.secret_key * other_pk).to_bytes()).digest()
         self.shared_secrets[name] = shared_secret
 
@@ -68,7 +68,7 @@ class UserSecretSharer(BaseUser):
 
 
     def recieve_DH_init(self, request):
-        other_pk = self.pki.get_public_key(request["name"])
+        other_pk = self.pki.get_public_key(request["name"], "DH")
         shared_secret = SHA256.new((self.secret_key * other_pk).to_bytes()).digest()
         self.shared_secrets[request["name"]] = shared_secret    
 
@@ -98,7 +98,7 @@ class UserHybridTalker(BaseUser):
         else:
             k = int_to_bytes(rand_int(128))
             Cm = AES.new(k, AES.MODE_CBC).encrypt(str_to_bytes(message))
-            other_pk = self.pki.get_public_key(name)
+            other_pk = self.pki.get_public_key(name, "DHE")
             esk, epk = self._ec_p224_keygen()
             encaps_key = SHA256.new((esk * other_pk).to_bytes()).digest()[0:16]
             Ck = AES.new(encaps_key, AES.MODE_CBC).encrypt(k)
