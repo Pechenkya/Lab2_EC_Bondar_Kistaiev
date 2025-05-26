@@ -57,7 +57,7 @@ class P224(EllipticCurve):
         
         self.n = 0xffffffffffffffffffffffffffff16a2e0b8f03e13dd29455c5c2a3d
         self.G = EllipticCurvePoint.from_affine(0xb70e0cbd6bb4bf7f321390b94a03c1d356c21122343280d6115c1d21,
-                                                0xbd376388b5f723fb4c22dfe6cd4375a05a07476444d5819985007e34, super())
+                                                0xbd376388b5f723fb4c22dfe6cd4375a05a07476444d5819985007e34, self)
 
 
 

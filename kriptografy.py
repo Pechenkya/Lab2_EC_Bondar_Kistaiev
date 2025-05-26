@@ -2,6 +2,7 @@ from epileptic import *
 from optimus import *
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA256
+from Crypto.Util.Padding import pad, unpad
 
 def str_to_bytes(s):
     return s.encode('utf-8')
@@ -57,7 +58,7 @@ class UserSecretSharer(BaseUser):
 
 
     def send_DH_init(self, name):
-        other_pk = self.pki.get_public_key(name)
+        other_pk = self.pki.get_public_key(name, "DH")
         shared_secret = SHA256.new((self.secret_key * other_pk).to_bytes()).digest()
         self.shared_secrets[name] = shared_secret
 
@@ -67,10 +68,18 @@ class UserSecretSharer(BaseUser):
         }
 
 
-    def recieve_DH_init(self, request):
-        other_pk = self.pki.get_public_key(request["name"])
+    def receive_DH_init(self, request):
+        other_pk = self.pki.get_public_key(request["name"], "DH")
         shared_secret = SHA256.new((self.secret_key * other_pk).to_bytes()).digest()
         self.shared_secrets[request["name"]] = shared_secret    
+
+
+    def reveal_shared_secrets(self):
+        return {
+            "package_type": "shared_secrets",
+            "name": self.name,
+            "secrets": self.shared_secrets
+        }
 
     
 
@@ -85,7 +94,7 @@ class UserHybridTalker(BaseUser):
     def hybrid_send(self, name, message):
         if name in self.chats:
             k = self.chats[name]["k"]
-            Cm = AES.new(k, AES.MODE_CBC).encrypt(str_to_bytes(message))
+            Cm = AES.new(k, AES.MODE_CBC).encrypt(pad(str_to_bytes(message), AES.block_size))
             self.chats[name]["messages"].append(f"Sent:  {message}")
 
             return {
@@ -93,15 +102,14 @@ class UserHybridTalker(BaseUser):
                 "name": self.name,
                 "message": Cm
             }
-        
-
         else:
             k = int_to_bytes(rand_int(128))
-            Cm = AES.new(k, AES.MODE_CBC).encrypt(str_to_bytes(message))
-            other_pk = self.pki.get_public_key(name)
+            print(f"Generated new key: {k.hex()}")
+            Cm = AES.new(k, AES.MODE_CBC).encrypt(pad(str_to_bytes(message), AES.block_size))
+            other_pk = self.pki.get_public_key(name, "DHE")
             esk, epk = self._ec_p224_keygen()
             encaps_key = SHA256.new((esk * other_pk).to_bytes()).digest()[0:16]
-            Ck = AES.new(encaps_key, AES.MODE_CBC).encrypt(k)
+            Ck = AES.new(encaps_key, AES.MODE_CBC).encrypt(pad(k, AES.block_size))
             self.chats[name] = {
                 "k": k,
                 "messages": [f"Sent:  {message}"]
@@ -122,19 +130,27 @@ class UserHybridTalker(BaseUser):
         if request_type == "new_send":
             other_pk = EllipticCurvePoint.from_bytes(request["DHE_piece"], self.EC)
             encaps_key = SHA256.new((self.secret_key * other_pk).to_bytes()).digest()[0:16]
-            k = AES.new(encaps_key, AES.MODE_CBC).decrypt(request["encapsulated_key"])
-            message = bytes_to_str(AES.new(k, AES.MODE_CBC).decrypt(request["message"]))
+
+            k = unpad(AES.new(encaps_key, AES.MODE_CBC).decrypt(request["encapsulated_key"]), AES.block_size)
+            print(f"Received encapsulated key: {k.hex()}")
+            message = bytes_to_str(unpad(AES.new(k, AES.MODE_CBC).decrypt(request["message"]), AES.block_size))
 
             self.chats[request["name"]] = {
                 "k": k,
                 "messages": [f"Received:  {message}"]
             }
-        
-
         elif request_type == "established_send":
             k = self.chats[request["name"]]["k"]
-            message = bytes_to_str(AES.new(k, AES.MODE_CBC).decrypt(request["message"]))
+
+            message = bytes_to_str(unpad(AES.new(k, AES.MODE_CBC).decrypt(request["message"]), AES.block_size))
             self.chats[request["name"]]["messages"].append(f"Received:  {message}")
+
+    def leak_chats(self):
+        return {
+            "package_type": "chats",
+            "name": self.name,
+            "chats": self.chats
+        }
 
 
 
