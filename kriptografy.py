@@ -94,7 +94,7 @@ class UserHybridTalker(BaseUser):
     def hybrid_send(self, name, message):
         if name in self.chats:
             k = self.chats[name]["k"]
-            Cm = AES.new(k, AES.MODE_CBC).encrypt(pad(str_to_bytes(message), AES.block_size))
+            Cm = AES.new(k, AES.MODE_ECB).encrypt(pad(str_to_bytes(message), AES.block_size))
             self.chats[name]["messages"].append(f"Sent:  {message}")
 
             return {
@@ -102,14 +102,15 @@ class UserHybridTalker(BaseUser):
                 "name": self.name,
                 "message": Cm
             }
+        
         else:
             k = int_to_bytes(rand_int(128))
-            print(f"Generated new key: {k.hex()}")
-            Cm = AES.new(k, AES.MODE_CBC).encrypt(pad(str_to_bytes(message), AES.block_size))
+            Cm = AES.new(k, AES.MODE_ECB).encrypt(pad(str_to_bytes(message), AES.block_size))
             other_pk = self.pki.get_public_key(name, "DHE")
             esk, epk = self._ec_p224_keygen()
             encaps_key = SHA256.new((esk * other_pk).to_bytes()).digest()[0:16]
-            Ck = AES.new(encaps_key, AES.MODE_CBC).encrypt(pad(k, AES.block_size))
+            Ck = AES.new(encaps_key, AES.MODE_ECB).encrypt(k)
+
             self.chats[name] = {
                 "k": k,
                 "messages": [f"Sent:  {message}"]
@@ -130,27 +131,28 @@ class UserHybridTalker(BaseUser):
         if request_type == "new_send":
             other_pk = EllipticCurvePoint.from_bytes(request["DHE_piece"], self.EC)
             encaps_key = SHA256.new((self.secret_key * other_pk).to_bytes()).digest()[0:16]
-
-            k = unpad(AES.new(encaps_key, AES.MODE_CBC).decrypt(request["encapsulated_key"]), AES.block_size)
-            print(f"Received encapsulated key: {k.hex()}")
-            message = bytes_to_str(unpad(AES.new(k, AES.MODE_CBC).decrypt(request["message"]), AES.block_size))
+            k = AES.new(encaps_key, AES.MODE_ECB).decrypt(request["encapsulated_key"])
+            message = bytes_to_str(unpad(AES.new(k, AES.MODE_ECB).decrypt(request["message"]), AES.block_size))
 
             self.chats[request["name"]] = {
                 "k": k,
                 "messages": [f"Received:  {message}"]
             }
+
         elif request_type == "established_send":
             k = self.chats[request["name"]]["k"]
 
-            message = bytes_to_str(unpad(AES.new(k, AES.MODE_CBC).decrypt(request["message"]), AES.block_size))
+            message = bytes_to_str(unpad(AES.new(k, AES.MODE_ECB).decrypt(request["message"]), AES.block_size))
             self.chats[request["name"]]["messages"].append(f"Received:  {message}")
 
     def leak_chats(self):
-        return {
-            "package_type": "chats",
-            "name": self.name,
-            "chats": self.chats
-        }
+        print(f"---- {self.name} ----")
+        for name, chat in self.chats.items():
+            print(f"Chat with {name}:")
+            for message in chat["messages"]:
+                print(f"\t-{message}")
+
+        print()
 
 
 
@@ -161,7 +163,7 @@ class DigitalSignatureUser(BaseUser):
 
 
     def sign_message(self, message):
-        z = SHA256.new(str_to_bytes(message)).digest()[0:28]
+        z = bytes_to_int(SHA256.new(str_to_bytes(message)).digest()[0:28])
 
         s = 0
         while s == 0:
@@ -169,7 +171,8 @@ class DigitalSignatureUser(BaseUser):
             while r == 0:
                 k = rand_less_than(self.EC.n - 1)
                 R = k * self.EC.G
-                r = R.x % self.EC.n
+                x, y = R.to_affine()
+                r = x % self.EC.n
 
             s = (pow(k, -1, self.EC.n) * (z + self.secret_key * r)) % self.EC.n
         
@@ -186,8 +189,8 @@ class DigitalSignatureUser(BaseUser):
     def verify_signature(self, sign_package):
         pk = self.pki.get_public_key(sign_package["name"], "ECDSA")
         r, s = sign_package["signature"]
-        z = SHA256.new(str_to_bytes(sign_package["message"])).digest()[0:28]
-        
+        z = bytes_to_int(SHA256.new(str_to_bytes(sign_package["message"])).digest()[0:28])
+
         if not ((0 < r < self.EC.n) and (0 < s < self.EC.n)):
             return False
         
@@ -200,5 +203,6 @@ class DigitalSignatureUser(BaseUser):
         if R == self.EC.inf():
             return False
         
-        return R.x % self.EC.n == r
+        x, y = R.to_affine()
+        return ((x - r) % self.EC.n) == 0
 

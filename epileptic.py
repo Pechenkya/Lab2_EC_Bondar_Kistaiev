@@ -108,7 +108,7 @@ class EllipticCurvePoint:
 
         x = (self.x * cerf) % self.curve.p
         y = (self.y * cerf) % self.curve.p
-
+        
         return x, y
 
     def __eq__(self, other):
